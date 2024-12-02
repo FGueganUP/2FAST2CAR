@@ -16,5 +16,5 @@ See our publication in PCCP: https://doi.org/10.1039/D4CP01721H
 Python 3 program, relying on the following dependencies: SpyRMSD, CREST (including XTB), Gaussian, Slurm. 
 Required Python libraries: glob, math, numpy, os, re, shutil, subprocess, sys, unicodedata.
 
-# 2FAST2CAR
+# 2FAST2CAR - additions
 In the augmented version, the code was rewritten to ease inclusion of other functions & modification. Extension of the program's capabilities were also included (see the PDF manual for more details). 
