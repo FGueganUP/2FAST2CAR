@@ -1,0 +1,11 @@
+Gaussian;OPT;opt
+Gaussian;OPT-TS;opt=(calcfc,ts,noeigen) freq=noraman
+Gaussian;FREQ;freq=noraman
+Gaussian;IRC;irc=(direction,maxpoints=50,recalc=3,calcfc,LQA)
+Gaussian;IRC-OPT;opt freq=noraman geom=check guess=read
+Gaussian;CDFT;pop=(NPA,hirshfeld)
+Gaussian;NBO;pop=NBO7
+Orca;OPT;opt
+Orca;OPT-TS;optTS TightSCF SlowConv Freq
+Orca;FREQ;freq
+Orca;CDFT;NPA Hirshfeld
