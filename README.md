@@ -1,5 +1,5 @@
 # 2FAST2CAR 
-This is the latest reasonably stable development version of 2FAST2CAR, the updated version of FASTCAR (dev. Oscar Gayraud and Hugo Geindre). Note it may still be misbehaving, so be cautious :)
+This is the latest reasonably stable development version of 2FAST2CAR, the updated version of FASTCAR (dev. Oscar Gayraud and Hugo Geindre). Note it may still be misbehaving, if you encounter any issue you can send your complaints to hugo.geindre@fastmail.com. 
 
 # Principle
 FASTCAR is designed as a complementary tool to CREST (https://crest-lab.github.io/crest-docs/), enabling a fully automated exploration of the conformational degrees of freedom within reaction profiles at DFT level (with Gaussian) and with a reasonable computational effort.
