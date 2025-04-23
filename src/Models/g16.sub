@@ -1,0 +1,25 @@
+#!/bin/sh
+#SBATCH --job-name={jobname}
+#SBATCH --nodes=1
+#SBATCH --ntasks={cpus}
+#SBATCH --output={jobname}.logfile
+#SBATCH --time={time}
+{nodex #SBATCH --exclude=[nodenumbs]}
+
+#Defining Gaussian Parameters
+export g16root={soft_path}
+source $g16root/bsd/g16.profile 
+export GAUSS_EXEDIR=$g16root
+export LD_LIBRARY_PATH=$g16root
+export GAUSS_SCRDIR=${SLUMR_SUBMIT_DIR}
+cd ${SLURM_SUBMIT_DIR}
+
+#Loading modules
+module load intel/2023.2.1
+export PATH=$g16root:$PATH
+export LD_LIBRARY_PATH=$g16root
+
+#Launching calculation
+time g16 < {jobname}.inp > {jobname}.out
+
+

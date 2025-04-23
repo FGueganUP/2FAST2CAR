@@ -1,0 +1,17 @@
+# ================================================================
+# Orca input file for FASTCAR 
+# ================================================================
+%pal nprocs {cpus} end
+%maxcore 2000
+! {keywords}  {method} {solvent} {dispersion}
+! PrintBasis {basis-set}
+{int coord %geom
+    TS_Mode \{[T] [A1] [A2] [A3] [A4]\} end
+end}
+%output
+     print[p_mos] 1
+ end #output
+* xyz  {charge}   {mult}
+{geo}
+*
+

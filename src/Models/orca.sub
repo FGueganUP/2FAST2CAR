@@ -1,0 +1,20 @@
+#!/bin/sh
+#SBATCH --job-name={jobname}
+#SBATCH --nodes=1
+#SBATCH --ntasks={cpus}
+#SBATCH --output={jobname}.logfile
+#SBATCH --time={time}
+{nodex #SBATCH --exclude=[nodenumbs]}
+
+# Loading modules
+if module list | grep 'intel/2023.2.1' -wq; then 
+    module swap intel gnu12/12.3.0
+else 
+    module load gnu12/12.3.0
+fi
+module load openmpi4/4.1.6
+ 
+export PATH={soft_path}:$PATH
+
+#Starting calculation
+time {soft_path}orca {jobname}.inp > {jobname}.out

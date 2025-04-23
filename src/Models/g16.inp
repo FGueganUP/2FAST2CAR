@@ -1,0 +1,25 @@
+%nprocshared={cpus}
+{chk}
+%mem=5GB
+# {keywords} {method} {basis-set} {solvent} {dispersion}
+
+VROUUUUUUUUUUUUUM
+
+{charge} {mult}
+{geo}
+
+{int coord [A1] [A2] [A3] [A4]}
+
+{wfx}
+
+{sup calc --Link1--
+%nprocshared=[cpus]
+[chk]
+# [keywords] [method] [basis-set] [solvent] [dispersion] geom=check guess=read
+
+VROOOOOOOOOOOOOM
+
+[charge] [mult]
+
+}
+

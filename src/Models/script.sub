@@ -1,0 +1,13 @@
+#!/bin/sh
+#SBATCH --job-name={jobname}
+#SBATCH --nodes=1 
+#SBATCH --ntasks=1
+#SBATCH --output={jobname}.logfile
+#SBATCH --time={time}
+
+cd ${SLURM_SUBMIT_DIR} 
+
+#Launching calculation 
+
+{dependency}
+{script}

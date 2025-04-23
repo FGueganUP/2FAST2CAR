@@ -1,0 +1,14 @@
+#!/bin/sh
+#SBATCH --job-name={jobname}
+#SBATCH --nodes=1 
+#SBATCH --ntasks={cpus}
+#SBATCH --output={jobname}.logfile
+#SBATCH --time={time}
+
+cd ${SLURM_SUBMIT_DIR} 
+
+#Launching calculation 
+
+{soft_path} struc.xyz --T 6 --ewin {ewin} --uhf {mult} --chrg {charge} {solvent} {nci} {constraints -cinp constraints.inp --subrmsd} > crestAnalysis.txt
+{soft_path} coord -cregen crest_conformers.xyz -ewin 30
+{script}
