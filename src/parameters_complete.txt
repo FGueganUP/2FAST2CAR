@@ -1,0 +1,47 @@
+--------------------------------------------------
+----------------FASTCAR parameters----------------
+--------------------------------------------------
+Check 10
+
+--------------------------------------------------
+-----------------CREST parameters-----------------
+--------------------------------------------------
+CREST version default
+CREST solvent --alpb THF
+EWIN 4
+NCI none
+Bond constrained 2 10
+Angle constrained 3 7 12
+Dihedral angle constrained 1 7 5 11
+Force constant 1
+Crest time limit 160:00:00
+
+--------------------------------------------------
+------------------RMSD parameters-----------------
+--------------------------------------------------
+RMSD threshold 0.3
+
+--------------------------------------------------
+------------------Opt parameters------------------
+--------------------------------------------------
+Method b3lyp
+Basis set 6-311++G(d,p)
+Dispersion empiricaldispersion=gd3
+Opt solvent SCRF=(Solvent=THF)
+Nodes excluded 01-08
+Constrained opt
+TS screening activats
+Active atoms 2 7 11 12
+Time limit 2-12:30:00
+
+--------------------------------------------------
+--------------Additional calculations-------------
+--------------------------------------------------
+Additional calculation single-point
+Additional software orca
+Additional method MP2
+Additional basis set def2-TZVP
+Additional solvent CPCM(THF)
+Additional dispersion D3
+Scope all
+
