@@ -19,227 +19,198 @@ import filemanager as fm
 import readconfig as rc
 import misc
 
-# This script is used for final refining step
-#
-# In case of unconstrained CREST:
-# It will first discard calculation that did not finish properly
-# It will then submit frequency calculation for the most stable geometry
-# It will then submit additional calculation cdft or NBO if selected
-#
-# In case of constrained CREST:
-# It will then discard duplicate aka calculation with same first frequency and 
-# same SCF energy at 6 digits
-# It will then discard calculation with a first frequency not in 
-# [- infinity, 0.7 first frequency of reference calculation]
-# It will then submit additional calculation IRC
+# This script is used after optimisations, it will check for failed 
+# calculations, duplicates, wrong TS...
 
-prevfilename = 'prevDFT.xyz'
-loopfilename = 'loopDFT.xyz'
+prevfilename = 'prevOPT.xyz'
+loopfilename = 'loopOPT.xyz'
+sumfilename = 'summary.log'
 
 # Get cluster specifications
 clust = rc.Cluster(fastcar_dir)
-# Get keywords
-kwds = rc.Keywords(fastcar_dir)
-# Get information from parameters.txt file
+# Get information from parameters.tmp file
 paramfile = rp.Parameters('../parameters.tmp')
-sumfilename = "summary.log"
-
+paramfile.getopt()
+paramfile.getwoc()
+paramfile.getloop()
+paramfile.getrmsd()
 
 now = datetime.datetime.now()
+date = now.strftime("%d/%m/%y %H:%M")
 with open(f'../{sumfilename}','a') as sumfile:
-    sumfile.write(f'Calling transmission at {now.time()}\n')
+    sumfile.write(f'Calling transmission {date}\n')
 
-if paramfile.base_1 != paramfile.base_2:
-    refine = True 
-else:
-    refine = False
-
-if refine:
-    newfile = []
-# Analysis of TS
+# Case of TS
 if paramfile.ref_freq:
     uniqueTS = []
-    doublonTS = []
+    duplicateTS = []
     garbageTS = []
+    noTS = []
     failedTS = []
-    notcompletedTS = []
-
     
-    if paramfile.check_st:
-        loopfiles =  glob.glob(f'{paramfile.base_name_1}*_'
-                               f'loop{paramfile.check_st}.out')
+    if paramfile.loopn:
+        loopfiles =  glob.glob(f'{paramfile.calc_name}*_'
+                               f'loop{paramfile.loopn}.out')
+        compTSname = f'compTS_{paramfile.loopn}.log'
+        file_name = glob.glob('../Final/*_lowest.out')[0]
+        startoutput = ro.Output(f'../Final/{file_name}')
     else:
-        loopfiles = glob.glob(f'{paramfile.base_name_1}*.out')
-
-    # Sort TS by category
-    #if paramfile.check_st:
-    #    file_name = glob.glob('../Final/*_lowest.out')[0]
-    #    startoutput = ro.Output(f'../Final/{file_name}')
-    #else:
-    #    startoutput = ro.Output(f'../{paramfile.experience_number}.out')
-    #startoutput.readnormvec()
-    #geor = np.zeros((startoutput.num_atom,3))
-    #for i,at in enumerate(startoutput.coordinates.rstrip().split('\n')):
-    #    for j,c in enumerate(at.split()[1:]):
-    #        geor[i][j] = c
+        loopfiles = glob.glob(f'{paramfile.calc_name}*.out')
+        compTSname = f'compTS.log'
+        startoutput = ro.Output(f'../{paramfile.calc_name}.out')
     goodfiles = list()
+    #Create file to write information on TS screening
+    if paramfile.tsc == 'scalprod':
+        compTS =  open(compTSname,'w')
+        emp = ''
+        heading = 'Scalar product of reaction normal modes' 
+        compTS.write(f'{emp:-^80}\n')
+        compTS.write(f'{heading:-^80}\n')
+        compTS.write(f'{emp:-^80}\n\n')
+
+    #Check result of reoptimisations
     for filename in loopfiles:
         outputfile = ro.Output(filename)
+        # Check for failed calculations
         if not outputfile.normterm:
-            notcompletedTS.append((filename, 'Calculation failed'))
+            failedTS.append((filename, 'Calculation failed'))
+            # Change the name of the failed TS
             if not 'failed' in filename:
                 new_name = filename.split('.')[0] + '_failed.' + \
                            filename.split('.')[1]
                 shutil.move(filename,new_name)
             continue
-        outputfile.readfreqs() #Not converged?
         x = outputfile.freqs[0]
+        # Check for failed freq calculations
         if math.isnan(x):
+            # Change the name of the failed TS
             if not 'failed' in filename:
                 new_name = filename.split('.')[0] + '_failed.' + \
                            filename.split('.')[1]
                 shutil.move(filename,new_name)
             else:
                 new_name = filename
-            notcompletedTS.append((new_name, 'Freq calculation failed'))
+            failedTS.append((new_name, 'Freq calculation failed'))
             continue
-        outputfile.readnrj()
         # Check if TS
-        if x < 0:
-            # Check if describe the good reaction
-            outputfile.readnormvec() 
-            #geoc = np.zeros((outputfile.num_atom,3))
-            #for i,at in enumerate(outputfile.coordinates.rstrip()
-            #                      .split('\n')):
-            #    for j,c in enumerate(at.split()[1:]):
-            #        geoc[i][j] = c
-            #rot,rssd=sp.spatial.transform.Rotation.align_vectors(geor,geoc)
-            #rot_mat = rot.as_matrix()
-            #anormvec = list()
-            #for v in outputfile.normvec:
-            #    new_vec = rot_mat.dot(v[1])
-            #    anormvec.append((v[0], new_vec))
-            #isid = misc.compnv(startoutput.normvec,outputfile.normvec)
-            #isid = misc.compnv(startoutput.normvec,anormvec)
-            isid = misc.checknv(outputfile.normvec,paramfile.activ_ats)
+        if outputfile.ts:
+            # Check if TS describes the same reaction as the start file
+            if paramfile.tsc == 'activats':
+                isid = misc.checknv(outputfile.normvec,paramfile.activ_ats)
+            elif paramfile.tsc == 'scalprod':
+                rot,rssd=sp.spatial.transform.Rotation.align_vectors\
+                         (startoutput.coordinates,outputfile.coordinates)
+                rot_mat = rot.as_matrix()
+                anormvec = list()
+                for v in outputfile.normvec[0]:
+                    new_vec = rot_mat.dot(v)
+                    anormvec.append(new_vec)
+                isid1,scalp1 = misc.compnv(startoutput.normvec[0],anormvec)
+                isid2,scalp2 = misc.compnv(startoutput.normvec[0],
+                                           outputfile.normvec[0])
+                if scalp1 > scalp2:
+                    scalp = scalp1
+                    isid = isid1
+                else:
+                    scalp = scalp2
+                    isid = isid2
+                compTS.write(f'{filename}: {scalp1} {scalp2}\n')
             if isid:
                 goodfiles.append(filename)
             else:
+                # Change the name of the garbage outputfiles
                 if not 'garbage' in filename:
                     new_name = filename.split('.')[0] + '_garbage.' + \
                                filename.split('.')[1]
                     shutil.move(filename,new_name)
                 else:
                     new_name = filename
-                garbageTS.append((new_name, 'E SCF =',
-                                  float(outputfile.last_SCF),
-                                  'First frequency =', x))
+                garbageTS.append((new_name, float(outputfile.last_SCF), x))
         else:
+            # Change the name of the outputfiles that are not TS
             if not 'noTS' in filename:
                 new_name = filename.split('.')[0] + '_noTS.' + \
                            filename.split('.')[1]
             else:
                 new_name = filename
             shutil.move(filename,new_name)
-            failedTS.append((new_name, 'E SCF =', float(outputfile.last_SCF), 
-                            'First frequency =', x))
-    rmsd_thresh = paramfile.RMSD_dft
+            noTS.append((new_name, float(outputfile.last_SCF), x))
+
+    rmsd_thresh = paramfile.RMSD_opt
     id_to_another = dict()
     newstrucs = list()
-    doublons = list()
-    if paramfile.check_st:
-        prevfiles = glob.glob(f'{paramfile.base_name_1}*.out')
-        prevfiles = [fn for fn in prevfiles if not f'loop{paramfile.check_st}'\
-                     in fn and not 'doublon' in fn and not 'failed' in fn and \
-                     not 'garbage' in fn and not 'noTS' in fn]
+    duplicates = list()
+    # Check if opt structures are identical to ones from previous loops
+    if paramfile.loopn:
+        prevfiles = glob.glob(f'{paramfile.calc_name}*.out')
+        prevfiles = [fn for fn in prevfiles if not f'loop{paramfile.loopn}'\
+                     in fn and not 'duplicate' in fn and not 'failed' in fn \
+                     and not 'garbage' in fn and not 'noTS' in fn]
         fm.outstoxyzfile(prevfiles,prevfilename)
+        # Opt structures from previous loops
         prev_mols = io.loadallmols(prevfilename)
         fm.outstoxyzfile(goodfiles,loopfilename)
+        # Opt structures from this loop
         loop_mols = io.loadallmols(loopfilename)
+        # These ones won't have their hydrogen stripped
         geo_mols = io.loadallmols(loopfilename)
         sim = fm.geocomp(loop_mols,prev_mols,rmsd_thresh)
         nloop_mols = [cm for c,cm in enumerate(loop_mols) if c not in sim]
         ngeo_mols = [cm for c,cm in enumerate(geo_mols) if c not in sim]
+        # Keep numbering in mind
         sn2 = [c for c,cm in enumerate(loop_mols) if c not in sim]
     else:
         fm.outstoxyzfile(goodfiles,loopfilename)
         nloop_mols = io.loadallmols(loopfilename)
         sn2 = range(0,len(nloop_mols))
     if len(nloop_mols) > 0:
+        # Check for identical structures in the ones from this loop
         sim2 = fm.geocomp_onefile(nloop_mols,rmsd_thresh)
     else:
         sim2 = []
-    if paramfile.check_st:
+    if paramfile.loopn:
+        # Structure identical to one from a previous loop
         for s in sim:
             filename = goodfiles[s]
-            doublons.append(filename)
-            if not 'doublon' in filename:
+            duplicates.append(filename)
+            # Change the name of the duplicates
+            if not 'duplicate' in filename:
                 outname = filename.split('.')[0] + '.out'
-                new_name = outname.split('.')[0] + '_doublon.out'
+                new_name = outname.split('.')[0] + '_duplicate.out'
                 shutil.move(outname,new_name)
             else:
                 new_name = filename
             id_to_another[new_name] = (prevfiles[sim[s][0]], sim[s][1])
+    # Structure identical to one from the same loop
     for s in sim2:
         filename = goodfiles[sn2[s]]
-        doublons.append(filename)
-        if not 'doublon' in filename:
+        duplicates.append(filename)
+        # Change the name of the duplicates
+        if not 'duplicate' in filename:
             outname = filename.split('.')[0] + '.out'
-            new_name = outname.split('.')[0] + '_doublon.out'
+            new_name = outname.split('.')[0] + '_duplicate.out'
             shutil.move(outname,new_name)
         else:
             new_name = filename
         id_to_another[new_name] = (goodfiles[sn2[sim2[s][0]]], sim2[s][1])
+
     for fn in goodfiles:
-        if fn not in doublons:
+        if fn not in duplicates:
             newstrucs.append(fn)
         
+    # Good TSs
     for filename in newstrucs:
         outputfile = ro.Output(filename)
-        outputfile.readnrj()
-        uniqueTS.append((filename, 'E SCF =',
-                         float(outputfile.last_SCF),
-                         'First frequency =', x))
-        if refine:
-            # Extract coordinate of 'unique' TS
-            outputfile.extractcoord()
-            # Create a new input file for large base calculation
-            new_file_name = filename.replace(f'{base_name_1}', 
-                                             f'{base_name_2}')
-            new_file_name = new_file_name.replace('out', 'inp')
-            soft = 'gaussian'
-            kw = kwds.keywords[soft]['opt-ts']
-            fm.writeg16inp(new_file_name,paramfile,12,
-                           outputfile.coord_text,kw,refine=True)
+        uniqueTS.append((filename, float(outputfile.last_SCF),
+                         outputfile.freqs[0]))
             
-    compname = f'{paramfile.base_name_1}*.out'
-    # Check for identical structures
-    #xyzlist = glob.glob(globname)
-    #list_rmsd = list()
-    #id_to_another = dict()
-    #newstrucs = list()
-    #sys.exit()
-    #for filename in sorted(glob.glob(compname)):
-    #    outputfile = ro.Output(filename)
-    #    xyzname = filename.split('.')[0] + '.xyz'
-    #    with open(xyzname,'w') as xyz:
-    #        xyz.write(f'{outputfile.num_atom}\n\n{outputfile.coordinates}')
-    #    if not paramfile.check_st or f'_loop{paramfile.check_st}' in filename:
-    #        list_rmsd.append(xyzname)
-    #for filename in list_rmsd:
-    #    doublon,idfile,doub_rmsd = fm.xyzlistcleanerbis(filename, rmsd_thresh,
-    #                                             compname.replace('out','xyz'))
-    #    #doublon,idfile,doub_rmsd = fm.xyzlistcleanerbis(filename,0.5,
-    #    #                                      compname.replace('out','xyz'))
-    #    if doublon:
-    #        id_to_another[filename.replace('xyz','out')] = (idfile.replace(
-    #                                                    'xyz','out'),doub_rmsd)
-    #    else:
-    #        newstrucs.append(filename.replace('xyz','out'))
-    if paramfile.check_st:
-        pruname = f'pruningDFT_{paramfile.check_st}.log'
+    compname = f'{paramfile.calc_name}*.out'
+
+    # Write results of opt pruning in pruning file
+    if paramfile.loopn:
+        pruname = f'pruningOPT_{paramfile.loopn}.log'
     else:
-        pruname = f'pruningDFT.log'
+        pruname = f'pruningOPT.log'
     with open(pruname,'w') as prunf:
         emp = ''
         heading = 'Results of the pruning' 
@@ -253,50 +224,43 @@ if paramfile.ref_freq:
         for ns in newstrucs:
             prunf.write(f'{ns}\n')
         if len(id_to_another) > 0:
-            #sumfile.write(f'{len(id_to_another)} identical to another '
-            #              'structure\n')
             heading = 'Structure identical to another one' 
             prunf.write(f'\n{heading:-^80}\n')
             for ita in id_to_another:
                 prunf.write(f'{ita}: {id_to_another[ita]}\n')
-    #for filename in sorted(glob.glob(compname.replace('out','xyz'))):
-    #        os.remove(filename)
     for filename in id_to_another:
-        #outputfile = ro.Output(filename.replace('xyz','out'))
         outputfile = ro.Output(filename)
-        outputfile.readnrj()
-        outputfile.readfreqs() 
-        doublonTS.append(f'{filename} E SCF = {outputfile.last_SCF} First '
-                         f'frequency = {outputfile.freqs[0]} id to ' 
-                         f'{id_to_another[filename][0]} rmsd = '
-                         f'{id_to_another[filename][1]}')
-        if not 'doublon' in filename:
-            outname = filename.split('.')[0] + '.out'
-            new_name = outname.split('.')[0] + '_doublon.out'
-            shutil.move(outname,new_name)
+        duplicateTS.append((filename, outputfile.last_SCF, outputfile.freqs[0],
+                         id_to_another[filename][0],id_to_another[filename][1]))
 
-    #ADD REFINE CALCULATION SUBMITION
-    uniqueTS.sort(key=lambda item: item[2])
-    doublonTS.sort(key=lambda item: item[2])
-    garbageTS.sort(key=lambda item: item[2])
-    failedTS.sort(key=lambda item: item[2])
-    if paramfile.check_st:
+    #Sort all dict containing the different results of optimisation by energy
+    uniqueTS.sort(key=lambda item: item[1])
+    duplicateTS.sort(key=lambda item: item[1])
+    garbageTS.sort(key=lambda item: item[1])
+    noTS.sort(key=lambda item: item[1])
+    failedTS.sort(key=lambda item: item[0])
+    if paramfile.loopn:
         wm = 'a'
     else:
         wm = 'w'
-    fm.writelogTS(uniqueTS,doublonTS,garbageTS,failedTS,notcompletedTS,wm)
+    # Update or create structures.log file with informations about reoptimised 
+    # structures
+    fm.writelogTS(uniqueTS,duplicateTS,garbageTS,noTS,failedTS,wm)
+
+    # Write informations about results of opt calculation in summary file
     with open(f'../{sumfilename}', 'a') as sumfile:
         sumfile.write('Informations about optimised TS written in '
-                      'structures.log\n')
-        sumfile.write(f'RMSD threshold: {paramfile.RMSD_dft}\n')
+                      'structures.log\n\n')
+        sumfile.write(f'RMSD threshold: {rmsd_thresh}\n')
         sumfile.write(f'{len(uniqueTS)} new TS(s)\n') 
-        sumfile.write(f'{len(doublonTS)} doublon(s)\n') 
+        sumfile.write(f'{len(duplicateTS)} duplicate(s)\n') 
         sumfile.write(f'{len(garbageTS)} TS(s) describing another reaction\n') 
-        sumfile.write(f'{len(failedTS)} that are not TS\n') 
-        sumfile.write(f'{len(notcompletedTS)} optimisation(s) failed\n') 
+        sumfile.write(f'{len(noTS)} that are not TS\n') 
+        sumfile.write(f'{len(failedTS)} calculation(s) failed\n') 
 
-
-    if paramfile.check == 'none':
+    # Decide what to do next, continue loops, go to abs.py or stop calculation
+    # If no loops, go to abs.py to finalize the process
+    if paramfile.loop == 'none':
         if not paramfile.woc:
             if os.path.isdir('../Final/'):
                 shutil.rmtree('../Final/')
@@ -308,11 +272,13 @@ if paramfile.ref_freq:
         else:
             with open(f'../{sumfilename}','a') as sumfile:
                 sumfile.write(f"No conformer found, ending calculation\n")
+                sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
                 sys.exit(0)
         os.chdir('../Final/')
-        fm.writeabsscript(paramfile)
-        os.system(f"sbatch script_abs.sub")   
-    elif paramfile.check_st == 0:
+        scriptname = fm.writesubscript('abs',paramfile,clust)
+        os.system(f"{clust.subco} {scriptname}")   
+    # If in first loop, start a new one
+    elif paramfile.loopn == 0:
         if not paramfile.woc:
             if os.path.isdir('../Final/'):
                 shutil.rmtree('../Final/')
@@ -324,15 +290,18 @@ if paramfile.ref_freq:
         else:
             with open(f'../{sumfilename}','a') as sumfile:
                 sumfile.write(f"No conformer found, ending calculation\n")
+                sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
                 sys.exit(0)
         os.chdir('../')
-        fm.writeloopscript(paramfile)
-        os.system(f"sbatch script_loop.sub")   
+        scriptname = fm.writesubscript('sparkplug',paramfile,clust)
+        os.system(f"{clust.subco} {scriptname}")   
+    # If already looping, check if new opt structures were found and if number 
+    # of max loops has not been exceeded, continue looping if so. If not, call
+    # abs.py
     else:
         if len(uniqueTS) > 0:
             plname = glob.glob('../Final/*_lowest.out')[0]
             prevlowest = ro.Output(plname)
-            prevlowest.readnrj()
             if uniqueTS[0][2] < prevlowest.last_SCF:
                 lowestname = uniqueTS[0][0].split('.')[0] + '_lowest.' +\
                              uniqueTS[0][0].split('.')[1]
@@ -340,172 +309,261 @@ if paramfile.ref_freq:
                 os.remove(plname)
                 with open(f'../{sumfilename}','a') as sumfile:
                     sumfile.write(f"New lowest energy structure: {lowestname}\n")
+                    sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
             else:
                 with open(f'../{sumfilename}','a') as sumfile:
                     sumfile.write(f"No new lowest energy structure\n")
-            if paramfile.check_st == paramfile.check:
+                    sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
+            if paramfile.loopn == paramfile.loop:
                 os.chdir('../Final/')
-                fm.writeabsscript(paramfile)
-                os.system(f"sbatch script_abs.sub")   
+                scriptname = fm.writesubscript('abs',paramfile,clust)
+                os.system(f"{clust.subco} {scriptname}")   
             else:
                 os.chdir('../')
-                fm.writeloopscript(paramfile)
-                os.system(f"sbatch script_loop.sub")   
+                scriptname = fm.writesubscript('sparkplug',paramfile,clust)
+                os.system(f"{clust.subco} {scriptname}")   
         else:
             with open(f'../{sumfilename}','a') as sumfile:
                 sumfile.write("No new structure\n")
+                sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
             os.chdir('../Final/')
-            fm.writeabsscript(paramfile)
-            os.system(f"sbatch script_abs.sub")   
-   
-# Analysis of geometry
-else:
-    E = []
-    garbageGeo = []
-    # Analysis of Geo to remove not converged calculation
-    if paramfile.check_st:
-        globname =  f'{paramfile.base_name_1}*_loop{paramfile.check_st}.out'
-    else:
-        globname =  f'{paramfile.base_name_1}*.out'
-    for filename in sorted(glob.glob(globname)):
-        outputfile = ro.Output(filename)
-        outputfile.readnrj()
-        if outputfile.normterm:
-            E.append((filename, float(outputfile.last_SCF)))
-        else:
-            garbageGeo.append((filename, 'did not converged'))
-    E.sort(key=lambda item: item[1])
+            scriptname = fm.writesubscript('abs',paramfile,clust)
+            os.system(f"{clust.subco} {scriptname}")   
 
+# Case of minimum
+else:
+    uniqueMin = []
+    duplicateMin = []
+    noMin = []
+    failedMin = []
+    if paramfile.loopn:
+        loopfiles =  glob.glob(f'{paramfile.calc_name}*_'
+                               f'loop{paramfile.loopn}.out')
+    else:
+        loopfiles = glob.glob(f'{paramfile.calc_name}*.out')
+
+    if paramfile.loopn:
+        file_name = glob.glob('../Final/*_lowest.out')[0]
+        startoutput = ro.Output(f'../Final/{file_name}')
+    else:
+        startoutput = ro.Output(f'../{paramfile.calc_name}.out')
+    goodfiles = list()
+    for filename in loopfiles:
+        outputfile = ro.Output(filename)
+        if not outputfile.normterm:
+            failedMin.append((filename, 'Calculation failed'))
+            # Change the name of the failed calculation
+            if not 'failed' in filename:
+                new_name = filename.split('.')[0] + '_failed.' + \
+                           filename.split('.')[1]
+                shutil.move(filename,new_name)
+            continue
+        x = outputfile.freqs[0]
+        if math.isnan(x):
+            # Change the name of the failed calculation
+            if not 'failed' in filename:
+                new_name = filename.split('.')[0] + '_failed.' + \
+                           filename.split('.')[1]
+                shutil.move(filename,new_name)
+            else:
+                new_name = filename
+            failedMin.append((new_name, 'Freq calculation failed'))
+            continue
+        if outputfile.ts:
+            if not 'garbage' in filename:
+                new_name = filename.split('.')[0] + '_garbage.' + \
+                           filename.split('.')[1]
+                shutil.move(filename,new_name)
+            else:
+                new_name = filename
+            noMin.append((new_name, outputfile.last_SCF, x))
+            continue
+        goodfiles.append(filename)
+    rmsd_thresh = 0.1
+    id_to_another = dict()
+    newstrucs = list()
+    duplicates = list()
+    # Check if opt structures are identical to ones from previous loops
+    if paramfile.loopn:
+        prevfiles = glob.glob(f'{paramfile.calc_name}*.out')
+        prevfiles = [fn for fn in prevfiles if not f'loop{paramfile.loopn}'\
+                     in fn and not 'duplicate' in fn and not 'failed' in fn \
+                     and not 'garbage' in fn]
+        fm.outstoxyzfile(prevfiles,prevfilename)
+        # Opt structures from previous loops
+        prev_mols = io.loadallmols(prevfilename)
+        fm.outstoxyzfile(goodfiles,loopfilename)
+        # Opt structures from this loop
+        loop_mols = io.loadallmols(loopfilename)
+        # These ones won't have their hydrogen stripped
+        geo_mols = io.loadallmols(loopfilename)
+        sim = fm.geocomp(loop_mols,prev_mols,rmsd_thresh)
+        nloop_mols = [cm for c,cm in enumerate(loop_mols) if c not in sim]
+        ngeo_mols = [cm for c,cm in enumerate(geo_mols) if c not in sim]
+        # Keep numbering in mind
+        sn2 = [c for c,cm in enumerate(loop_mols) if c not in sim]
+    else:
+        fm.outstoxyzfile(goodfiles,loopfilename)
+        nloop_mols = io.loadallmols(loopfilename)
+        sn2 = range(0,len(nloop_mols))
+    if len(nloop_mols) > 0:
+        # Check for identical structures in the ones from this loop
+        sim2 = fm.geocomp_onefile(nloop_mols,rmsd_thresh)
+    else:
+        sim2 = []
+    if paramfile.loopn:
+        # Structure identical to one from a previous loop
+        for s in sim:
+            filename = goodfiles[s]
+            duplicates.append(filename)
+            # Change the name of the duplicates
+            if not 'duplicate' in filename:
+                outname = filename.split('.')[0] + '.out'
+                new_name = outname.split('.')[0] + '_duplicate.out'
+                shutil.move(outname,new_name)
+            else:
+                new_name = filename
+            id_to_another[new_name] = (prevfiles[sim[s][0]], sim[s][1])
+    # Structure identical to one from the same loop
+    for s in sim2:
+        filename = goodfiles[sn2[s]]
+        duplicates.append(filename)
+        # Change the name of the duplicates
+        if not 'duplicate' in filename:
+            outname = filename.split('.')[0] + '.out'
+            new_name = outname.split('.')[0] + '_duplicate.out'
+            shutil.move(outname,new_name)
+        else:
+            new_name = filename
+        id_to_another[new_name] = (goodfiles[sn2[sim2[s][0]]], sim2[s][1])
+
+    for fn in goodfiles:
+        if fn not in duplicates:
+            newstrucs.append(fn)
+    # Good mins
+    for filename in newstrucs:
+        outputfile = ro.Output(filename)
+        uniqueMin.append((filename, outputfile.last_SCF))
+            
+    compname = f'{paramfile.calc_name}*.out'
+
+    # Write results of opt pruning in pruning file
+    if paramfile.loopn:
+        pruname = f'pruningOPT_{paramfile.loopn}.log'
+    else:
+        pruname = f'pruningOPT.log'
+    with open(pruname,'w') as prunf:
+        emp = ''
+        heading = 'Results of the pruning' 
+        prunf.write(f'{emp:-^80}\n')
+        prunf.write(f'{heading:-^80}\n')
+        prunf.write(f'{emp:-^80}\n\n')
+        prunf.write(f'RMSD threshold: {rmsd_thresh}\n')
+        prunf.write(f'{len(loopfiles)} optimisation done, {len(newstrucs)} new'
+                    ' structures\n\n')
+        heading = 'New structures' 
+        for ns in newstrucs:
+            prunf.write(f'{ns}\n')
+        if len(id_to_another) > 0:
+            heading = 'Structure identical to another one' 
+            prunf.write(f'\n{heading:-^80}\n')
+            for ita in id_to_another:
+                prunf.write(f'{ita}: {id_to_another[ita]}\n')
+    for filename in id_to_another:
+        outputfile = ro.Output(filename)
+        duplicateMin.append((filename,outputfile.last_SCF,
+                           id_to_another[filename][0],
+                           id_to_another[filename][1]))
+
+    uniqueMin.sort(key=lambda item: item[1])
+    duplicateMin.sort(key=lambda item: item[1])
+    failedMin.sort(key=lambda item: item[0])
+    noMin.sort(key=lambda item: item[1])
     # Write in log file sorted geom by category
-    if paramfile.check_st:
+    if paramfile.loopn:
         wm = 'a'
     else:
         wm = 'w'
-    fm.writelogmin(E,garbageGeo,wm)
+    fm.writelogmin(uniqueMin,duplicateMin,noMin,failedMin,wm)
     with open(f'../{sumfilename}', 'a') as sumfile:
         sumfile.write('Informations about optimised minima written in '
-                      'structures.log\n')
-        sumfile.write(f'{len(E)} new minima\n{len(garbageGeo)} not converged\n')
+                      'structures.log\n\n')
+        sumfile.write(f'RMSD threshold: {rmsd_thresh}\n')
+        sumfile.write(f'{len(uniqueMin)} new minimum(a)\n') 
+        sumfile.write(f'{len(duplicateMin)} duplicate(s)\n') 
+        sumfile.write(f'{len(noMin)} with a negative frequency\n') 
+        sumfile.write(f'{len(failedMin)} optimisation(s) failed\n') 
 
-    if paramfile.check == 'none':
+    # If no loops, go to abs.py to finalize the process
+    if paramfile.loop == 'none':
         if not paramfile.woc:
             if os.path.isdir('../Final/'):
                 shutil.rmtree('../Final/')
             os.mkdir('../Final/')
-        lowestname = E[0][0].split('.')[0] + '_lowest.' +\
-                     E[0][0].split('.')[1]
-        shutil.copy(E[0][0], f'../Final/{lowestname}')
+        if len(uniqueMin) > 0:
+            lowestname = uniqueMin[0][0].split('.')[0] + '_lowest.' +\
+                         uniqueMin[0][0].split('.')[1]
+            shutil.copy(uniqueMin[0][0], f'../Final/{lowestname}')
+        else:
+            with open(f'../{sumfilename}','a') as sumfile:
+                sumfile.write(f"No conformer found, ending calculation\n")
+                sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
+                sys.exit(0)
         os.chdir('../Final/')
-        fm.writeabsscript(paramfile)
-        os.system(f"sbatch script_abs.sub")   
-    elif paramfile.check_st == 0:
+        scriptname = fm.writesubscript('abs',paramfile,clust)
+        os.system(f"{clust.subco} {scriptname}")   
+    # If in first loop, start a new one
+    elif paramfile.loopn == 0:
         if not paramfile.woc:
             if os.path.isdir('../Final/'):
                 shutil.rmtree('../Final/')
             os.mkdir('../Final/')
-        lowestname = E[0][0].split('.')[0] + '_lowest.' +\
-                     E[0][0].split('.')[1]
-        shutil.copy(E[0][0], f'../Final/{lowestname}')
+        if len(uniqueMin) > 0:
+            lowestname = uniqueMin[0][0].split('.')[0] + '_lowest.' +\
+                         uniqueMin[0][0].split('.')[1]
+            shutil.copy(uniqueMin[0][0], f'../Final/{lowestname}')
+        else:
+            with open(f'../{sumfilename}','a') as sumfile:
+                sumfile.write(f"No conformer found, ending calculation\n")
+                sys.exit(0)
         os.chdir('../')
-        fm.writeloopscript(paramfile)
-        os.system(f"sbatch script_loop.sub")   
+        scriptname = fm.writesubscript('sparkplug',paramfile,clust)
+        os.system(f"{clust.subco} {scriptname}")   
+    # If already looping, check if new opt structures were found and continue
+    # looping if so. If not, go to abs.py
     else:
-        os.chdir('../')
-        os.mkdir('COMP')
-        nrjs = fm.readsummary('structures.log')
-        outputfiles = dict()
-        allmins = list()
-        for lfn in nrjs:
-            for ofn in nrjs[lfn]:
-                if f'loop{paramfile.check_st}' in lfn:
-                    ofn_comp = f'{ofn} check'
-                else:
-                    ofn_comp = f'{ofn} prev'
-                outputfiles[ofn_comp] = ro.Output(f"Geo-CREST/{ofn}")
-                outputfiles[ofn_comp].extractgeo()
-                outputfiles[ofn_comp].readnrj()
-        os.chdir('COMP/')
-        for ofn in outputfiles:
-            oxyzn_base = ofn.split('.')[0]
-            oxyzn_ext = ofn.split()[1]
-            oxyzn = f'{oxyzn_base}_{oxyzn_ext}.xyz'
-            with open(oxyzn,'w') as of:
-                of.write(f'{outputfiles[ofn].num_atom}\n')
-                of.write(f'{outputfiles[ofn].last_SCF}\n')
-                for item in outputfiles[ofn].coordinates:
-                    of.write(' '.join(map(str, item)))
-                    of.write('\n')
+        if len(uniqueMin) > 0:
+            plname = glob.glob('../Final/*_lowest.out')[0]
+            prevlowest = ro.Output(plname)
+            if uniqueMin[0][1] < prevlowest.last_SCF:
+                lowestname = uniqueMin[0][0].split('.')[0] + '_lowest.' +\
+                             uniqueMin[0][0].split('.')[1]
+                shutil.copy(f'{uniqueMin[0][0]}', f'../Final/{lowestname}')
+                os.remove(plname)
+                with open(f'../{sumfilename}','a') as sumfile:
+                    sumfile.write("New lowest energy structure: "
+                                 f"{lowestname}\n")
+                    sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
+            else:
+                with open(f'../{sumfilename}','a') as sumfile:
+                    sumfile.write(f"No new lowest energy structure\n")
+            if paramfile.loopn == paramfile.loop:
+                os.chdir('../Final/')
+                scriptname = fm.writesubscript('abs',paramfile,clust)
+                os.system(f"{clust.subco} {scriptname}")   
+                with open(f'../{sumfilename}','a') as sumfile:
+                    sumfile.write(f'Maximum number of loops reached\n')
+            else:
+                os.chdir('../')
+                scriptname = fm.writesubscript('sparkplug',paramfile,clust)
+                os.system(f"{clust.subco} {scriptname}")   
+            with open(f'../{sumfilename}','a') as sumfile:
+                sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
+        else:
+            with open(f'../{sumfilename}','a') as sumfile:
+                sumfile.write("No new structure\n")
+                sumfile.write(f'{emp:-^80}\n{emp:-^80}\n\n')
+            os.chdir('../Final/')
+            scriptname = fm.writesubscript('abs',paramfile,clust)
+            os.system(f"{clust.subco} {scriptname}")   
 
-        corresp_check = dict()
-        for ofn in outputfiles:
-            oxyzn_base = ofn.split('.')[0]
-            oxyzn_ext = ofn.split()[1]
-            oxyzn = f'{oxyzn_base}_{oxyzn_ext}.xyz'
-            with open(oxyzn,'r') as fout:
-                flines = fout.readlines()
-                nrj_recalc = float(flines[1])
-            if not 'check' in ofn:
-                allmins.append((ofn,nrj_recalc))
-                continue
-            result = subprocess.check_output(f'python -m spyrmsd -m {oxyzn} '
-                                              '*prev.xyz', shell=True)
-            prevfns = (sorted(glob.glob(f'*prev.xyz')))
-            rmsd_values = result.split()
-            rmsd_values = [float(item.decode()) for item in rmsd_values]
-            mini = 999
-            for r,rmsd in enumerate(rmsd_values):
-                with open(prevfns[r],'r') as fout:
-                    flines = fout.readlines()
-                    nrj_prev = float(flines[1])
-                nrjdiff = abs(nrj_prev-nrj_recalc)*627.51
-                #if rmsd < paramfile.RMSD_dft_threshold and rmsd < mini and \
-                #                                        nrjdiff < nrj_thresh:
-                if rmsd < paramfile.RMSD_dft and rmsd < mini:
-                    mini = rmsd
-                    corresp_check[oxyzn]=(nrj_recalc,prevfns[r],rmsd,nrj_prev,
-                                          nrjdiff)
-                elif rmsd < mini:
-                    mini = rmsd
-                    closest = prevfns[r]
-                    cl_nrj = nrj_prev
-                    cl_diff = nrjdiff
-                    cl_rmsd = rmsd
-            if not oxyzn in corresp_check:
-                corresp_check[oxyzn]=(f'new structure,{nrj_recalc},{closest},'
-                                      f'{cl_rmsd},{cl_nrj},{cl_diff:.4f}')
-                allmins.append((ofn,nrj_recalc))
-        allmins.sort(key=lambda item: item[1])
-        os.chdir('../')
-        maxtitlesize = 0
-        for elt in allmins:
-            if len(elt[0]) > maxtitlesize:
-                maxtitlesize = len(elt[0])
-        maxtitlesize += 1
-        with open('nrjs_check.log','w') as lf:
-            for elt in allmins:
-                lf.write(f'{elt[0]:{maxtitlesize}} {elt[1]}\n')
-        with open('corresp_check.log','w') as lf:
-            for oxyzn in corresp_check:
-                lf.write(f'{oxyzn},{corresp_check[oxyzn]}\n')
-        shutil.rmtree('COMP')
-        if allmins[0][0].split()[1] == 'check':
-            if not paramfile.woc:
-                if os.path.isdir('Final/'):
-                    shutil.rmtree('Final/')
-                os.mkdir('Final/')
-            lowestname = allmins[0][0].split()[0].split('.')[0] + '_lowest.' +\
-                         allmins[0][0].split()[0].split('.')[1]
-            shutil.copy(f'Geo-CREST/{allmins[0][0].split()[0]}', 
-                        f'Final/{lowestname}')
-        else:
-            with open(sumfilename,'a') as sumfile:
-                sumfile.write("No new lowest energy structure\n")
-        if paramfile.check_st == paramfile.check:
-            with open(sumfilename,'a') as sumfile:
-                sumfile.write("Maximum number of loop reached\n")
-            os.chdir('Final/')
-            fm.writeabsscript(paramfile)
-            os.system(f"sbatch script_abs.sub")   
-        else:
-            fm.writeloopscript(paramfile)
-            os.system(f"sbatch script_loop.sub")   

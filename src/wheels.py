@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import datetime
 import re
 import glob
 import math
@@ -16,35 +17,40 @@ import misc
 # It will print BD* in case of NBO
 # In other cases it will extract energies
 
-# Get information from parameters_mod.txt file
-paramfile = rp.Parameters('../parameters.tmp')
 sumfilename = "summary.log"
 
-Energies = []
+now = datetime.datetime.now()
+date = now.strftime("%d/%m/%y %H:%M")
+with open(f'../{sumfilename}','a') as sumfile:
+    sumfile.write(f'Calling wheels.py {date}\n')
+
+# Get information from parameters_mod.txt file
+paramfile = rp.Parameters('../parameters.tmp')
+
+energies = []
 NPA = []
 NBO = []
 local_E = []
 
-for filename in sorted(glob.glob(f'*{paramfile.experience_number}*.out')):
-    outputfile = ro.Output(filename)
-    outputfile.readnrj()
-    # Extract NPA
-    if 'cdft' in filename:
-        outputfile.readcharges()
-    # Extract NBO
-    elif 'nbo' in filename:
-        outputfile.readnbo()
-        NBO = outputfile.NBO
-    # Extract energies from other calculations
-    else:   
-        outputfile.readallnrjs()
-        Energies.append(outputfile.allnrjs)
+#for filename in sorted(glob.glob(f'*{paramfile.calc_name}*.out')):
+#    outputfile = ro.Output(filename)
+#    # Extract NBO
+#    if 'nbo' in filename:
+#        outputfile.readnbo()
+#        NBO = outputfile.NBO
+#    # Extract energies from other calculations
+#    else:   
+#        energies.append(outputfile.energies)
 
 # Write in a new file 'results' all the data extracted
-fm.writeresults(Energies,NPA,local_E,NBO)
+#fm.writeresults(energies,NPA,local_E,NBO)
+
+nrjs = fm.readsummary('../structures.log')
+
 with open(f'../{sumfilename}', 'a') as sumfile:
     sumfile.write('Informations about final calculations written in '
                   'results.txt\n')
+    sumfile.write(f'{len(nrjs)} unique conformers found and optimised\n')
     ending = 'Destination reached'
     sumfile.write(f'{ending:-^80}\n')
 #os.remove('../parameters.tmp')

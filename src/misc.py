@@ -90,11 +90,11 @@ def calc_cdft_gds(ofiles,r=6):
     
 
 def calc_cdft_funcs(ofiles,cdft_gds,r=6):
+    kcht = ['mulliken','hirshfeld','natural']
     cdft_fnames = [(r'f$^{+}$','f+'),(r'f$^{-}$','f-'),('\u0394f','delta_f'),
                    (r's$^{+}$','s+'),(r's$^{-}$','s-'),('\u0394s','delta_s'),
                    (u'\u0394\u03C1$_{elec}$','delta_rho_elec'),
                    (u'\u0394\u03C1$_{nuc}$','delta_rho_nuc')]
-
     charges = []
     for of in ofiles:
         charges.append((of.charge,of.charges))
@@ -102,16 +102,17 @@ def calc_cdft_funcs(ofiles,cdft_gds,r=6):
 
     chtypes = list()
     for cht in ofiles[1].charges:
-        chtypes.append(cht)
+        if cht in kcht:
+            chtypes.append(cht)
     cdfts = list()
     for f,func in enumerate(cdft_fnames):
         cdfts.append({})
         for cht in chtypes:
             cdfts[f][cht] = list()
     for cht in chtypes:
-        for n,at in enumerate(charges[1][1][cht]):
-            fpres = round(at[1] - charges[0][1][cht][n][1],r)
-            fmres = round(charges[2][1][cht][n][1] - at[1],r)
+        for n,ch in enumerate(charges[1][1][cht]):
+            fpres = round(ch - charges[0][1][cht][n],r)
+            fmres = round(charges[2][1][cht][n] - ch,r)
             fdres = round(fpres - fmres,6)
             mup = cdft_gds[3]
             mum = cdft_gds[4]
@@ -237,25 +238,24 @@ def compnv(refnv,compnv):
             if prop > thr2:
                 break
     elif mode == "scal_prod":
-        thr = 0.5
+        thr = 0.1
         res = True
         reftnv = list()
         comptnv = list()
-        for a,at in enumerate(refnv):
-            for v in at[1]:
+        for n,vec in enumerate(refnv):
+            for v in vec:
                 reftnv.append(v)
-            for v in compnv[a][1]:
+            for v in compnv[n]:
                 comptnv.append(v)
-        sp = np.dot(reftnv,comptnv)
-        print(sp)
+        sp = abs(np.dot(reftnv,comptnv))
+        #print(sp)
         if sp < thr:
             res = False
-    return res
+    return res,sp
         
 def checknv(compnv,activ_ats):
     res = True
-    thr2 = 0.5
-    lim = 3
+    lim = len(activ_ats) + 3
     cnorms = dict()
     cnormtot = 0
     for a,at in enumerate(compnv):
@@ -279,3 +279,37 @@ def checknv(compnv,activ_ats):
             break
     return res
     
+def timeformat(time):
+    sp_time = time.split('-')
+    if len(sp_time) > 2:
+        return False
+    elif len(sp_time) == 2:
+        days = sp_time[0]
+        hms = sp_time[1].split(':')
+    elif len(sp_time) == 1:
+        days = 0
+        hms = sp_time[0].split(':')
+    if len(hms) == 1:
+        try:
+            hours = int(hms[0])
+        except ValueError:
+            return False
+        mins = 0
+        secs = 0
+    elif len(hms) == 2:
+        try:
+            hours = int(hms[0])
+            mins = int(hms[1])
+        except ValueError:
+            return False
+        secs = 0
+    elif len(hms) == 3:
+        try:
+            hours = int(hms[0])
+            mins = int(hms[1])
+            secs = int(hms[2])
+        except ValueError:
+            return False
+    else:
+        return False
+    return True

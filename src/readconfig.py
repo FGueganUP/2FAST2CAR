@@ -8,6 +8,8 @@ class Cluster:
     def __init__(self,fastcar_dir):
         """Open the file and read """
         self.fn = fastcar_dir + "/config.txt"
+        self.default = dict()
+        self.path = dict()
         if not os.path.isfile(self.fn):
             print(f'File {self.fn} missing.')
             sys.exit()
@@ -16,13 +18,14 @@ class Cluster:
         for line in self.file_lines:
             if line.startswith('#'):
                 continue
-            elif line.startswith("g16_path"):
-                self.g16_path = line.split("=")[1].strip()
-            elif line.startswith("g16C_path"):
-                self.g16C_path = line.split("=")[1].strip()
-        if not hasattr(self, "g16_path"):
-            print(f'Variable g16_path missing in {self.fn}')
-            sys.exit()
+            elif line.startswith("default"):
+                soft = line.split('=')[0].split('_')[1].strip()
+                self.default[soft] = line.split("=")[1].strip()
+            elif line.startswith("path"):
+                soft = line.split('=')[0].split('_')[1].strip()
+                self.path[soft] = line.split("=")[1].strip()
+            elif line.startswith("sub_command"):
+                self.subco = line.split("=")[1].strip()
     
 class Keywords:
     """Class that is used to read and store the informations about the 

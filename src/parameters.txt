@@ -1,0 +1,38 @@
+--------------------------------------------------
+----------------FASTCAR parameters----------------
+--------------------------------------------------
+Check 10
+
+--------------------------------------------------
+-----------------CREST parameters-----------------
+--------------------------------------------------
+CREST version default
+CREST solvent --alpb THF
+EWIN 4
+NCI none
+Bond constrained 2 10
+Bond constrained 2 38
+Force constant 1
+
+--------------------------------------------------
+------------------RMSD parameters-----------------
+--------------------------------------------------
+RMSD threshold 0.3
+
+--------------------------------------------------
+------------------Opt parameters------------------
+--------------------------------------------------
+Method b3lyp
+Basis set 6-311++G(d,p)
+Dispersion empiricaldispersion=gd3
+Opt solvent SCRF=(Solvent=THF)
+Nodes excluded 01-08
+TS screening activats
+
+--------------------------------------------------
+--------------Additional calculations-------------
+--------------------------------------------------
+Additional calculation single-point
+Additional software orca
+Scope all
+

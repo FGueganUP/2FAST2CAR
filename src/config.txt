@@ -1,3 +1,8 @@
 #Edit this file according to your cluster
-g16_path=/opt/ohpc/pub/software/g16
-g16C_path=/opt/ohpc/pub/software/g16C/g16
+default_gaussian=g16
+default_orca=orca
+path_g16=/opt/ohpc/pub/software/g16C/g16/
+path_orca=/opt/ohpc/pub/software/orca_4_1_2_linux_x86-64_openmpi313/
+path_crest=/home/hgeindre/miniconda3/bin/
+
+sub_command=sbatch

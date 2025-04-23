@@ -121,18 +121,16 @@ def plot_cdft(ofile,cdfts,ecs):
     plt.show()
     plt.close()
     
-def superposeGeos(geo1,geo2,rmsd,ecs,label=True):
+def superposeGeos(geo1,atnums1,geo2,atnums2,rmsd,ecs,label=True):
     #bounds_x, bounds_y, bounds_z = spotBounds(xs[mol], ys[mol], zs[mol])
-    bxs1,bys1,bzs1 = spotBounds(geo1,ecs)
+    bxs1,bys1,bzs1 = spotBounds(geo1,atnums1,ecs)
     geos = dict()
     geos['geo1'] = dict()
     geos['geo2'] = dict()
     for l,line1 in enumerate(geo1):
-        geos['geo1'][l+1] = [line1.split()[0], 
-                             [float(c) for c in line1.split()[1:4]]]
+        geos['geo1'][l+1] = [atnums1[l],line1]
         line2 = geo2[l]
-        geos['geo2'][l+1] = [line2.split()[0], 
-                             [float(c) for c in line2.split()[1:4]]]
+        geos['geo2'][l+1] = [atnums2[l],line2]
     size = 3
     xs = dict()
     ys = dict()
@@ -154,7 +152,6 @@ def superposeGeos(geo1,geo2,rmsd,ecs,label=True):
             geoK2[i][j] = geos[mol2][at][1][j]
         
     rot,rssd = sp.spatial.transform.Rotation.align_vectors(geoK1,geoK2)
-    print(rssd)
     rot_mat = rot.as_matrix()
 
     ageos = dict()
@@ -168,14 +165,7 @@ def superposeGeos(geo1,geo2,rmsd,ecs,label=True):
         newC = rot_mat.dot(geos[mol2][at][1])
         ageos[mol2][at].append(newC)
 
-    #Sorry
-    geo2_bnd = list()
-    for at in ageos[mol2]:
-        line = f'{ageos[mol2][at][0]} '
-        for coord in ageos[mol2][at][1]:
-            line += f'{coord} '
-        geo2_bnd.append(line)
-    bxs2,bys2,bzs2 = spotBounds(geo2_bnd,ecs)
+    bxs2,bys2,bzs2 = spotBounds(geo2,atnums2,ecs)
     
     for m,mol in enumerate(ageos):
         xs[mol] = dict()
@@ -187,15 +177,12 @@ def superposeGeos(geo1,geo2,rmsd,ecs,label=True):
             g = ageos[mol][at]
             if not g[0] in xs[mol]:
                 xs[mol][g[0]] = list()
-            xs[mol][g[0]].append(float(g[1][0]))
-            if not g[0] in ys[mol]:
                 ys[mol][g[0]] = list()
-            ys[mol][g[0]].append(float(g[1][1]))
-            if not g[0] in zs[mol]:
                 zs[mol][g[0]] = list()
-            zs[mol][g[0]].append(float(g[1][2]))
-            if not g[0] in labels[mol]:
                 labels[mol][g[0]] = list()
+            xs[mol][g[0]].append(float(g[1][0]))
+            ys[mol][g[0]].append(float(g[1][1]))
+            zs[mol][g[0]].append(float(g[1][2]))
             labels[mol][g[0]].append(at)
         upLim = 0
         downLim = 0
@@ -211,12 +198,8 @@ def superposeGeos(geo1,geo2,rmsd,ecs,label=True):
         ax.set_ylim3d(downLim,upLim)
         ax.set_zlim3d(downLim,upLim)
         for t in xs[mol]:
-            for elt in ecs:
-                if t == ecs[elt][0]:
-                    e = elt
-                    break
             ax.scatter(xs[mol][t], ys[mol][t], zs[mol][t],
-                       c=clr[m],s=int(ecs[e][3])*size,
+                       c=clr[m],s=int(ecs[t][3])*size,
                        depthshade=False,alpha=0.5)
             if label:
                 for k,l in enumerate(labels[mol][t]):

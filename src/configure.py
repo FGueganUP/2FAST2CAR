@@ -4,6 +4,8 @@ import os
 import glob
 import re
 
+#Update the localisation of fastcar directory in all the python file
+
 fastcar_dir = os.path.dirname(os.path.realpath(__file__))
 
 pattern = re.compile(r'^fastcar_dir = (.*)\n', re.MULTILINE)
@@ -22,4 +24,3 @@ for pyfile in (glob.glob('*.py')):
         with open(pyfile, 'w') as f:
             f.write(new_content)
         
-#Add the fastcar_dir in path
